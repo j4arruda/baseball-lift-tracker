@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lift Tracker</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #3b1e1e;
+    }
+
+    main {
+      max-width: 950px;
+      margin: auto;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+    }
+
+    #login {
+      max-width: 450px;
+      margin: 60px auto;
+    }
+
+    form {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+    }
+
+    #account-form {
+      grid-template-columns: 1fr;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-weight: bold;
+    }
+
+    input,
+    select,
+    button {
+      padding: 10px;
+      font: inherit;
+      border-radius: 5px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      background: white;
+    }
+
+    button {
+      background: #eb2525;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #e64343;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .wide {
+      grid-column: 1 / -1;
+    }
+
+    .secondary {
+      background: #475569;
+    }
+
+    .secondary:hover {
+      background: #334155;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 20px 0;
+    }
+
+    .tabs button {
+      background: #f1f5f9;
+      color: #3b1e1e;
+      border: 1px solid #cbd5e1;
+    }
+
+    .tabs button:hover {
+      background: #fee2e2;
+    }
+
+    .tabs button[aria-pressed="true"] {
+      background: #eb2525;
+      color: white;
+      border-color: #eb2525;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+
+    .note {
+      color: #64748b;
+      line-height: 1.5;
+    }
+
+    :focus-visible {
+      outline: 3px solid #991b1b;
+      outline-offset: 3px;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 600px) {
+      form {
+        grid-template-columns: 1fr;
+      }
+
+      .header {
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <!-- Login and account creation -->
+    <section id="login" class="card">
+      <h1>Lift Tracker</h1>
+      <p>Choose your role and use your name as your username.</p>
+
+      <form id="account-form">
+        <label>
+          Role
+          <select id="role">
+            <option value="player">Player</option>
+            <option value="coach">Coach</option>
+          </select>
+        </label>
+
+        <label>
+          Username (Your Name)
+          <input
+            id="name"
+            type="text"
+            autocomplete="username"
+            placeholder="Enter your name"
+            maxlength="80"
+            required
+          >
+        </label>
+
+        <label id="password-label" hidden>
+          Password
+          <input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Enter your password"
+            disabled
+          >
+        </label>
+
+        <p id="password-note" class="note" hidden>
+          Use at least 8 characters when creating a coach account.
+        </p>
+
+        <button type="submit">Log In</button>
+
+        <button id="register" type="button" class="secondary">
+          Create Account
+        </button>
+      </form>
+    </section>
+
+    <!-- Dashboard -->
+    <div id="dashboard" hidden>
+      <header class="header">
+        <div>
+          <h1>Lift Tracker</h1>
+          <p id="welcome"></p>
+        </div>
+
+        <button id="logout" type="button">Log Out</button>
+      </header>
+
+      <!-- Player view -->
+      <div id="player-view" hidden>
+        <section class="card">
+          <h2>Log a Lift</h2>
+
+          <form id="lift-form">
+            <label>
+              Date
+              <input id="date" type="date" required>
+            </label>
+
+            <label>
+              Lift
+              <select id="lift">
+                <optgroup label="Squat">
+                  <option>Barbell back squat</option>
+                  <option>Barbell front squat</option>
+                  <option>Safety bar squat</option>
+                </optgroup>
+
+                <optgroup label="Bench Press">
+                  <option>Barbell bench press</option>
+                  <option>Dumbbell bench press</option>
+                </optgroup>
+
+                <optgroup label="Deadlift">
+                  <option>Trap bar deadlift</option>
+                </optgroup>
+              </select>
+            </label>
+
+            <label>
+              Weight
+              <input
+                id="weight"
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="135"
+                required
+              >
+            </label>
+
+            <label>
+              Unit
+              <select id="unit">
+                <option value="lb">lb</option>
+                <option value="kg">kg</option>
+              </select>
+            </label>
+
+            <label>
+              Sets
+              <input
+                id="sets"
+                type="number"
+                min="1"
+                step="1"
+                value="3"
+                required
+              >
+            </label>
+
+            <label>
+              Reps per Set
+              <input
+                id="reps"
+                type="number"
+                min="1"
+                step="1"
+                value="5"
+                required
+              >
+            </label>
+
+            <button type="submit" class="wide">Save Lift</button>
+          </form>
+
+          <p class="note">
+            For dumbbell bench press, enter the weight of one dumbbell.
+            Add separate entries when weight or reps change.
+          </p>
+        </section>
+
+        <section class="card">
+          <h2>Your Workout History</h2>
+          <div id="player-history"></div>
+        </section>
+      </div>
+
+      <!-- Coach view -->
+      <section id="coach-view" class="card" hidden>
+        <h2>Player Lift Logs</h2>
+        <p class="note">Select a player to view their lifts.</p>
+
+        <button id="refresh" type="button" class="secondary">
+          Refresh Players
+        </button>
+
+        <div
+          id="tabs"
+          class="tabs"
+          role="group"
+          aria-label="Select a player"
+        ></div>
+
+        <h3 id="player-title"></h3>
+        <div id="coach-history"></div>
+      </section>
+    </div>
+
+    <p id="status" role="status" class="note" aria-live="polite"></p>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let me = null;
+    let players = [];
+    let selected = null;
+
+    async function api(url, method = "GET", data) {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: data === undefined ? undefined : JSON.stringify(data)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Request failed.");
+      }
+
+      return result;
+    }
+
+    function message(text) {
+      $("status").textContent = text;
+    }
+
+    function updatePasswordField() {
+      const isCoach = $("role").value === "coach";
+
+      $("password-label").hidden = !isCoach;
+      $("password-note").hidden = !isCoach;
+      $("password").disabled = !isCoach;
+      $("password").required = isCoach;
+      $("password").value = "";
+    }
+
+    $("role").addEventListener("change", updatePasswordField);
+    updatePasswordField();
+
+    async function authenticate(createAccount) {
+      if (!$("account-form").reportValidity()) return;
+
+      const controls = Array.from(
+        $("account-form").querySelectorAll("input, select, button")
+      );
+
+      const disabledStates = controls.map(control => control.disabled);
+
+      const data = {
+        name: $("name").value,
+        role: $("role").value,
+        password: $("password").value
+      };
+
+      controls.forEach(control => {
+        control.disabled = true;
+      });
+
+      message("Please wait...");
+
+      try {
+        me = await api(
+          createAccount ? "/api/register" : "/api/login",
+          "POST",
+          data
+        );
+
+        $("password").value = "";
+        message("");
+        await showDashboard();
+      } catch (error) {
+        message(error.message);
+      } finally {
+        controls.forEach((control, index) => {
+          control.disabled = disabledStates[index];
+        });
+      }
+    }
+
+    $("account-form").addEventListener("submit", event => {
+      event.preventDefault();
+      authenticate(false);
+    });
+
+    $("register").addEventListener("click", () => {
+      authenticate(true);
+    });
+
+    async function showDashboard() {
+      $("login").hidden = true;
+      $("dashboard").hidden = false;
+
+      const isCoach = me.role === "coach";
+
+      $("welcome").textContent =
+        `Welcome, ${me.name} (${isCoach ? "Coach" : "Player"})`;
+
+      $("player-view").hidden = isCoach;
+      $("coach-view").hidden = !isCoach;
+
+      if (isCoach) {
+        await refreshPlayers();
+      } else {
+        $("lift-form").reset();
+
+        const today = new Date();
+
+        $("date").value = [
+          today.getFullYear(),
+          String(today.getMonth() + 1).padStart(2, "0"),
+          String(today.getDate()).padStart(2, "0")
+        ].join("-");
+
+        renderHistory($("player-history"), me.entries, true);
+      }
+    }
+
+    function renderHistory(container, entries, allowDelete) {
+      container.replaceChildren();
+
+      if (!entries.length) {
+        container.textContent = "No lifts logged yet.";
+        return;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "table-wrap";
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headingRow = document.createElement("tr");
+
+      const headings = ["Date", "Lift", "Weight", "Sets", "Reps"];
+
+      if (allowDelete) headings.push("Action");
+
+      headings.forEach(text => {
+        const cell = document.createElement("th");
+        cell.scope = "col";
+        cell.textContent = text;
+        headingRow.appendChild(cell);
+      });
+
+      thead.appendChild(headingRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+
+      [...entries]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .forEach(entry => {
+          const row = document.createElement("tr");
+
+          const values = [
+            entry.date,
+            entry.lift,
+            `${entry.weight} ${entry.unit}`,
+            entry.sets,
+            entry.reps
+          ];
+
+          values.forEach(value => {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+          });
+
+          if (allowDelete) {
+            const actionCell = document.createElement("td");
+            const deleteButton = document.createElement("button");
+
+            deleteButton.type = "button";
+            deleteButton.textContent = "Delete";
+            deleteButton.setAttribute(
+              "aria-label",
+              `Delete ${entry.lift} on ${entry.date}`
+            );
+
+            deleteButton.addEventListener("click", async () => {
+              deleteButton.disabled = true;
+
+              try {
+                me = await api(
+                  "/api/lifts/" + encodeURIComponent(entry.id),
+                  "DELETE"
+                );
+
+                renderHistory(container, me.entries, true);
+                message("Entry deleted.");
+              } catch (error) {
+                message(error.message);
+                deleteButton.disabled = false;
+              }
+            });
+
+            actionCell.appendChild(deleteButton);
+            row.appendChild(actionCell);
+          }
+
+          tbody.appendChild(row);
+        });
+
+      table.appendChild(tbody);
+      wrapper.appendChild(table);
+      container.appendChild(wrapper);
+    }
+
+    async function refreshPlayers() {
+      players = await api("/api/players");
+
+      players.sort((a, b) => a.name.localeCompare(b.name));
+
+      if (!players.some(player => player.id === selected)) {
+        selected = players[0]?.id || null;
+      }
+
+      $("tabs").replaceChildren();
+
+      players.forEach(player => {
+        const button = document.createElement("button");
+
+        button.type = "button";
+        button.textContent = player.name;
+        button.setAttribute(
+          "aria-pressed",
+          String(player.id === selected)
+        );
+
+        button.addEventListener("click", () => {
+          selected = player.id;
+
+          Array.from($("tabs").children).forEach(tab => {
+            tab.setAttribute(
+              "aria-pressed",
+              String(tab === button)
+            );
+          });
+
+          showSelectedPlayer();
+        });
+
+        $("tabs").appendChild(button);
+      });
+
+      showSelectedPlayer();
+    }
+
+    function showSelectedPlayer() {
+      const player = players.find(player => player.id === selected);
+
+      $("player-title").textContent = player
+        ? `${player.name}'s Lift History`
+        : "No players yet";
+
+      if (player) {
+        renderHistory($("coach-history"), player.entries, false);
+      } else {
+        $("coach-history").textContent =
+          "Players will appear after creating an account on this server.";
+      }
+    }
+
+    $("refresh").addEventListener("click", async () => {
+      $("refresh").disabled = true;
+
+      try {
+        await refreshPlayers();
+        message("Players refreshed.");
+      } catch (error) {
+        message(error.message);
+      } finally {
+        $("refresh").disabled = false;
+      }
+    });
+
+    $("lift-form").addEventListener("submit", async event => {
+      event.preventDefault();
+
+      if (!$("lift-form").reportValidity()) return;
+
+      const saveButton = $("lift-form").querySelector("button");
+      saveButton.disabled = true;
+
+      try {
+        me = await api("/api/lifts", "POST", {
+          date: $("date").value,
+          lift: $("lift").value,
+          weight: Number($("weight").value),
+          unit: $("unit").value,
+          sets: Number($("sets").value),
+          reps: Number($("reps").value)
+        });
+
+        renderHistory($("player-history"), me.entries, true);
+        message("Lift saved.");
+      } catch (error) {
+        message(error.message);
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
+
+    $("logout").addEventListener("click", async () => {
+      try {
+        await api("/api/logout", "POST");
+
+        me = null;
+        players = [];
+        selected = null;
+
+        $("dashboard").hidden = true;
+        $("player-view").hidden = true;
+        $("coach-view").hidden = true;
+        $("login").hidden = false;
+
+        $("player-history").replaceChildren();
+        $("coach-history").replaceChildren();
+        $("tabs").replaceChildren();
+
+        $("account-form").reset();
+        updatePasswordField();
+
+        message("Logged out.");
+        $("name").focus();
+      } catch (error) {
+        message(error.message);
+      }
+    });
+
+    async function restoreSession() {
+      try {
+        me = await api("/api/me");
+        await showDashboard();
+      } catch (error) {
+        if (error.message !== "Please log in.") {
+          message(error.message);
+        }
+      }
+    }
+
+    restoreSession();
+  </script>
+</body>
+</html>
