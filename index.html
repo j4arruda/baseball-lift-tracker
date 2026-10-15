@@ -39,7 +39,9 @@
       gap: 15px;
     }
 
-    #account-form { grid-template-columns: 1fr; }
+    #account-form {
+      grid-template-columns: 1fr;
+    }
 
     label {
       display: grid;
@@ -66,16 +68,26 @@
       cursor: pointer;
     }
 
-    button:hover { background: #e64343; }
+    button:hover {
+      background: #e64343;
+    }
 
     button:disabled {
       opacity: 0.6;
       cursor: wait;
     }
 
-    .wide { grid-column: 1 / -1; }
-    .secondary { background: #475569; }
-    .secondary:hover { background: #334155; }
+    .wide {
+      grid-column: 1 / -1;
+    }
+
+    .secondary {
+      background: #475569;
+    }
+
+    .secondary:hover {
+      background: #334155;
+    }
 
     .header {
       display: flex;
@@ -98,7 +110,9 @@
       border: 1px solid #cbd5e1;
     }
 
-    .tabs button:hover { background: #fee2e2; }
+    .tabs button:hover {
+      background: #fee2e2;
+    }
 
     .tabs button[aria-pressed="true"] {
       background: #eb2525;
@@ -106,7 +120,9 @@
       border-color: #eb2525;
     }
 
-    .table-wrap { overflow-x: auto; }
+    .table-wrap {
+      overflow-x: auto;
+    }
 
     table {
       width: 100%;
@@ -135,11 +151,18 @@
       outline-offset: 3px;
     }
 
-    [hidden] { display: none !important; }
+    [hidden] {
+      display: none !important;
+    }
 
     @media (max-width: 600px) {
-      form { grid-template-columns: 1fr; }
-      .header { align-items: flex-start; }
+      form {
+        grid-template-columns: 1fr;
+      }
+
+      .header {
+        align-items: flex-start;
+      }
     }
   </style>
 </head>
@@ -266,6 +289,16 @@
                 <optgroup label="Deadlift">
                   <option>Trap bar deadlift</option>
                 </optgroup>
+
+                <optgroup label="Cleans">
+                  <option>Barbell cleans</option>
+                  <option>Trap bar jumps</option>
+                </optgroup>
+
+                <optgroup label="Rows">
+                  <option>Barbell rows</option>
+                  <option>Dumbbell rows</option>
+                </optgroup>
               </select>
             </label>
 
@@ -317,8 +350,9 @@
           </form>
 
           <p class="note">
-            For flat and incline dumbbell bench press, enter the weight
-            of one dumbbell. Add separate entries when weight or reps change.
+            For dumbbell bench press, incline dumbbell bench press,
+            and dumbbell rows, enter the weight of one dumbbell.
+            Add separate entries when weight or reps change.
           </p>
         </section>
 
@@ -352,8 +386,10 @@
 
         <p class="note">
           Heaviest logged weight for each lift, regardless of reps or
-          sets. All tied players are shown. Weights are compared after
-          conversion and displayed in lb. Dumbbell weights are per dumbbell.
+          sets. Reps shown are from entries at that winning weight.
+          Tied players appear on separate rows. Weights are compared
+          after conversion and displayed in lb.
+          Dumbbell weights are per dumbbell.
         </p>
 
         <div id="leaderboard">Loading leaderboard...</div>
@@ -374,15 +410,11 @@
   <script>
     const $ = id => document.getElementById(id);
 
-    const LIFTS = [
-      "Barbell back squat",
-      "Barbell front squat",
-      "Safety bar squat",
-      "Barbell bench press",
-      "Dumbbell bench press",
-      "Incline dumbbell bench press",
-      "Trap bar deadlift"
-    ];
+    // Keep leaderboard names synchronized with the lift dropdown.
+    const LIFTS = Array.from(
+      $("lift").options,
+      option => option.value
+    );
 
     const PLAYER_FIELDS =
       "id, name, body_weight, body_weight_unit";
@@ -663,7 +695,7 @@
         const player = players.find(player => player.id === me.id);
 
         if (!player) {
-          logout();
+          logout(true);
           message("This player account was removed.");
           return;
         }
@@ -672,7 +704,7 @@
 
         $("saved-body-weight").textContent = bodyWeightText(player);
 
-        // Leave unsaved body weight input untouched during refresh.
+        // Keep unsaved body weight input unchanged during refresh.
         renderHistory(
           $("player-history"),
           entries.filter(entry => entry.player_id === me.id),
@@ -861,38 +893,57 @@
       );
 
       return LIFTS.map(lift => {
+        const candidates = liftEntries
+          .filter(entry =>
+            entry.lift === lift &&
+            names.has(entry.player_id) &&
+            ["lb", "kg"].includes(entry.unit)
+          )
+          .map(entry => {
+            const weight = Number(entry.weight);
+
+            return {
+              ...entry,
+              pounds: entry.unit === "kg"
+                ? weight / 0.45359237
+                : weight
+            };
+          })
+          .filter(entry =>
+            Number.isFinite(entry.pounds) &&
+            entry.pounds >= 0
+          );
+
         let best = -Infinity;
+
+        candidates.forEach(entry => {
+          best = Math.max(best, entry.pounds);
+        });
+
         const winners = new Map();
 
-        liftEntries.forEach(entry => {
-          if (
-            entry.lift !== lift ||
-            !names.has(entry.player_id) ||
-            !["lb", "kg"].includes(entry.unit)
-          ) return;
+        candidates.forEach(entry => {
+          if (Math.abs(entry.pounds - best) > 0.000001) return;
 
-          const weight = Number(entry.weight);
+          let winner = winners.get(entry.player_id);
 
-          if (!Number.isFinite(weight) || weight < 0) return;
+          if (!winner) {
+            winner = {
+              name: names.get(entry.player_id),
+              reps: new Set()
+            };
 
-          const pounds = entry.unit === "kg"
-            ? weight / 0.45359237
-            : weight;
-
-          if (pounds > best + 0.000001) {
-            best = pounds;
-            winners.clear();
-            winners.set(entry.player_id, names.get(entry.player_id));
-          } else if (Math.abs(pounds - best) <= 0.000001) {
-            winners.set(entry.player_id, names.get(entry.player_id));
+            winners.set(entry.player_id, winner);
           }
+
+          winner.reps.add(Number(entry.reps));
         });
 
         return {
           lift,
           best,
           winners: Array.from(winners.values())
-            .sort((a, b) => a.localeCompare(b))
+            .sort((a, b) => a.name.localeCompare(b.name))
         };
       });
     }
@@ -900,18 +951,33 @@
     function renderLeaderboard() {
       const body = makeTable($("leaderboard"), [
         "Lift",
-        "Player(s)",
-        "Heaviest Weight"
+        "Player",
+        "Heaviest Weight",
+        "Reps"
       ]);
 
       leaderboardRows(players, entries).forEach(record => {
-        addRow(body, [
-          record.lift,
-          record.winners.join(", ") || "No lifts logged yet",
-          record.winners.length
-            ? `${formatNumber(record.best)} lb`
-            : "—"
-        ]);
+        if (!record.winners.length) {
+          addRow(body, [
+            record.lift,
+            "No lifts logged yet",
+            "—",
+            "—"
+          ]);
+
+          return;
+        }
+
+        record.winners.forEach(winner => {
+          addRow(body, [
+            record.lift,
+            winner.name,
+            `${formatNumber(record.best)} lb`,
+            Array.from(winner.reps)
+              .sort((a, b) => a - b)
+              .join(", ")
+          ]);
+        });
       });
     }
 
@@ -944,10 +1010,12 @@
         try {
           await refreshData();
         } catch {
-          message(
-            successMessage +
-            " Could not refresh the display yet. Click Refresh Data."
-          );
+          if (session === sessionVersion) {
+            message(
+              successMessage +
+              " Could not refresh the display yet. Click Refresh Data."
+            );
+          }
         }
       } catch (error) {
         if (session === sessionVersion) {
@@ -1039,8 +1107,8 @@
       }
     });
 
-    function logout() {
-      if (mutating) return;
+    function logout(force = false) {
+      if (mutating && !force) return;
 
       sessionVersion++;
       refreshVersion++;
@@ -1068,7 +1136,7 @@
       $("name").focus();
     }
 
-    $("logout").addEventListener("click", logout);
+    $("logout").addEventListener("click", () => logout());
 
     setInterval(async () => {
       if (
