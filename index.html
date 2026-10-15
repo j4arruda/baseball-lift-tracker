@@ -120,6 +120,11 @@
       white-space: nowrap;
     }
 
+    #leaderboard td:nth-child(2) {
+      white-space: normal;
+      min-width: 160px;
+    }
+
     .note {
       color: #64748b;
       line-height: 1.5;
@@ -158,7 +163,6 @@
           Username (Your Name)
           <input
             id="name"
-            type="text"
             autocomplete="username"
             placeholder="Enter your name"
             maxlength="80"
@@ -172,7 +176,6 @@
             id="password"
             type="password"
             autocomplete="current-password"
-            placeholder="Enter your password"
             disabled
           >
         </label>
@@ -182,6 +185,7 @@
         </p>
 
         <button type="submit">Log In</button>
+
         <button id="register" type="button" class="secondary">
           Create Account
         </button>
@@ -194,10 +198,47 @@
           <h1>Lift Tracker</h1>
           <p id="welcome"></p>
         </div>
+
         <button id="logout" type="button">Log Out</button>
       </header>
 
       <div id="player-view" hidden>
+        <section class="card">
+          <h2>Your Body Weight</h2>
+          <p id="saved-body-weight" class="note"></p>
+
+          <form id="body-weight-form">
+            <label>
+              Body Weight
+              <input
+                id="body-weight"
+                type="number"
+                min="0.1"
+                max="9999.9"
+                step="0.1"
+                required
+              >
+            </label>
+
+            <label>
+              Unit
+              <select id="body-weight-unit">
+                <option value="lb">lb</option>
+                <option value="kg">kg</option>
+              </select>
+            </label>
+
+            <button class="wide" type="submit">
+              Save Body Weight
+            </button>
+          </form>
+
+          <p class="note">
+            Your latest body weight is saved to your account
+            and visible to coaches.
+          </p>
+        </section>
+
         <section class="card">
           <h2>Log a Lift</h2>
 
@@ -215,10 +256,12 @@
                   <option>Barbell front squat</option>
                   <option>Safety bar squat</option>
                 </optgroup>
+
                 <optgroup label="Bench Press">
                   <option>Barbell bench press</option>
                   <option>Dumbbell bench press</option>
                 </optgroup>
+
                 <optgroup label="Deadlift">
                   <option>Trap bar deadlift</option>
                 </optgroup>
@@ -286,14 +329,10 @@
 
       <section id="coach-view" class="card" hidden>
         <h2>Player Lift Logs</h2>
-        <p class="note">
-          Select a player to view their lifts.
-          Logs refresh automatically every 10 seconds.
-        </p>
 
-        <button id="refresh" type="button" class="secondary">
-          Refresh Players
-        </button>
+        <p class="note">
+          Select a player to view their body weight and lifts.
+        </p>
 
         <div
           id="tabs"
@@ -303,11 +342,30 @@
         ></div>
 
         <h3 id="player-title"></h3>
+        <p id="coach-body-weight" class="note"></p>
         <div id="coach-history"></div>
       </section>
+
+      <section class="card">
+        <h2>Lift Leaderboard</h2>
+
+        <p class="note">
+          Heaviest logged weight for each lift, regardless of reps or
+          sets. All tied players are shown. Weights are compared after
+          conversion and displayed in lb. Dumbbell weights are per dumbbell.
+        </p>
+
+        <div id="leaderboard">Loading leaderboard...</div>
+      </section>
+
+      <button id="refresh" type="button" class="secondary">
+        Refresh Data
+      </button>
+
+      <p class="note">Shared data refreshes every 10 seconds.</p>
     </div>
 
-    <p id="status" role="status" class="note" aria-live="polite"></p>
+    <p id="status" class="note" role="status" aria-live="polite"></p>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -315,63 +373,92 @@
   <script>
     const $ = id => document.getElementById(id);
 
-    const DATABASE_URL = "https://yvkjuzgyfsoblxpkafdy.supabase.co";
-    const DATABASE_KEY = "sb_publishable_ayz6ml_WSRifccClGAGSfQ_HGbTY9mL";
+    const LIFTS = [
+      "Barbell back squat",
+      "Barbell front squat",
+      "Safety bar squat",
+      "Barbell bench press",
+      "Dumbbell bench press",
+      "Trap bar deadlift"
+    ];
+
+    const PLAYER_FIELDS =
+      "id, name, body_weight, body_weight_unit";
 
     const db = window.supabase
-      ? window.supabase.createClient(DATABASE_URL, DATABASE_KEY, {
-          auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false
+      ? window.supabase.createClient(
+          "https://yvkjuzgyfsoblxpkafdy.supabase.co",
+          "sb_publishable_ayz6ml_WSRifccClGAGSfQ_HGbTY9mL",
+          {
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false,
+              detectSessionInUrl: false
+            }
           }
-        })
+        )
       : null;
 
     let me = null;
     let players = [];
+    let entries = [];
     let selected = null;
+
     let sessionVersion = 0;
-    let historyVersion = 0;
-    let playerListVersion = 0;
+    let refreshVersion = 0;
+
     let accountBusy = false;
-    let saving = false;
+    let mutating = false;
     let autoRefreshing = false;
 
     function message(text) {
       $("status").textContent = text;
     }
 
+    function normalizeName(name) {
+      return name.trim().replace(/\s+/g, " ");
+    }
+
+    function formatNumber(value) {
+      return Number(value).toLocaleString(undefined, {
+        maximumFractionDigits: 2
+      });
+    }
+
+    function bodyWeightText(player) {
+      if (player?.body_weight == null) {
+        return "Body weight: not set";
+      }
+
+      return `Body weight: ${formatNumber(player.body_weight)} ${player.body_weight_unit}`;
+    }
+
     async function query(request) {
       const { data, error } = await request;
 
       if (error) {
-        if (error.code === "23505") {
-          throw new Error("Account already exists. Click Log In.");
-        }
-        throw new Error(error.message);
+        throw new Error(
+          error.code === "23505"
+            ? "Account already exists. Click Log In."
+            : error.message
+        );
       }
 
       return data;
     }
 
-    // Read all rows, including histories larger than one API page.
     async function readAll(makeQuery) {
       const rows = [];
-      const pageSize = 500;
 
-      for (let offset = 0; ; offset += pageSize) {
+      for (let offset = 0; ; offset += 500) {
         const page = await query(
-          makeQuery().range(offset, offset + pageSize - 1)
+          makeQuery().range(offset, offset + 499)
         );
 
         rows.push(...page);
-        if (page.length < pageSize) return rows;
-      }
-    }
 
-    function normalizeName(name) {
-      return name.trim().replace(/\s+/g, " ");
+        if (page.length < 500) return rows;
+      }
     }
 
     function updatePasswordField() {
@@ -389,7 +476,7 @@
 
     async function authenticate(createAccount) {
       if (!db) {
-        message("Could not load the database connection. Check your internet and refresh.");
+        message("Could not load Supabase. Check your internet and refresh.");
         return;
       }
 
@@ -414,6 +501,7 @@
       const controls = Array.from(
         $("account-form").querySelectorAll("input, select, button")
       );
+
       const disabledStates = controls.map(control => control.disabled);
 
       controls.forEach(control => control.disabled = true);
@@ -439,11 +527,14 @@
           };
         } else {
           const savedPlayers = await readAll(() =>
-            db.from("players").select("id, name").order("id")
+            db.from("players")
+              .select(PLAYER_FIELDS)
+              .order("id")
           );
 
           const existing = savedPlayers.find(player =>
-            normalizeName(player.name).toLowerCase() === name.toLowerCase()
+            normalizeName(player.name).toLowerCase() ===
+            name.toLowerCase()
           );
 
           if (createAccount) {
@@ -451,14 +542,12 @@
               throw new Error("Account already exists. Click Log In.");
             }
 
-            const player = await query(
+            account = await query(
               db.from("players")
                 .insert({ name })
-                .select("id, name")
+                .select(PLAYER_FIELDS)
                 .single()
             );
-
-            account = { ...player, role: "player" };
           } else {
             if (!existing) {
               throw new Error(
@@ -466,24 +555,28 @@
               );
             }
 
-            account = { ...existing, role: "player" };
+            account = existing;
           }
+
+          account = { ...account, role: "player" };
         }
 
         me = account;
         sessionVersion++;
         selected = null;
-        $("password").value = "";
 
+        $("password").value = "";
         showDashboard();
         message("");
-        await refreshDashboard();
+
+        await refreshData();
       } catch (error) {
         message(error.message);
       } finally {
         controls.forEach((control, index) => {
           control.disabled = disabledStates[index];
         });
+
         accountBusy = false;
       }
     }
@@ -510,11 +603,19 @@
 
       $("player-history").textContent = "Loading lifts...";
       $("coach-history").textContent = "Loading players...";
+      $("leaderboard").textContent = "Loading leaderboard...";
+
       $("tabs").replaceChildren();
       $("player-title").textContent = "";
+      $("coach-body-weight").textContent = "";
 
       if (!coach) {
         $("lift-form").reset();
+        $("body-weight-form").reset();
+
+        $("body-weight").value = me.body_weight ?? "";
+        $("body-weight-unit").value = me.body_weight_unit || "lb";
+        $("saved-body-weight").textContent = bodyWeightText(me);
 
         const today = new Date();
 
@@ -526,77 +627,70 @@
       }
     }
 
-    async function fetchLifts(playerId) {
-      return readAll(() =>
-        db.from("lifts")
-          .select("*")
-          .eq("player_id", playerId)
-          .order("date", { ascending: false })
-          .order("created_at", { ascending: false })
-          .order("id")
-      );
-    }
+    async function refreshData() {
+      if (!me) return;
 
-    async function refreshPlayerHistory() {
-      if (me?.role !== "player") return;
-
-      const playerId = me.id;
       const session = sessionVersion;
-      const request = ++historyVersion;
-      const entries = await fetchLifts(playerId);
+      const request = ++refreshVersion;
+
+      const [savedPlayers, savedEntries] = await Promise.all([
+        readAll(() =>
+          db.from("players")
+            .select(PLAYER_FIELDS)
+            .order("name")
+            .order("id")
+        ),
+        readAll(() =>
+          db.from("lifts")
+            .select("*")
+            .order("date", { ascending: false })
+            .order("created_at", { ascending: false })
+            .order("id")
+        )
+      ]);
 
       if (
         session !== sessionVersion ||
-        request !== historyVersion ||
-        me?.id !== playerId
-      ) return;
-
-      renderHistory($("player-history"), entries, true);
-    }
-
-    async function refreshPlayers() {
-      if (me?.role !== "coach") return;
-
-      const session = sessionVersion;
-      const request = ++playerListVersion;
-
-      const savedPlayers = await readAll(() =>
-        db.from("players")
-          .select("id, name")
-          .order("name")
-          .order("id")
-      );
-
-      if (
-        session !== sessionVersion ||
-        request !== playerListVersion ||
-        me?.role !== "coach"
+        request !== refreshVersion
       ) return;
 
       players = savedPlayers;
+      entries = savedEntries;
 
-      if (!players.some(player => player.id === selected)) {
-        selected = players[0]?.id || null;
-      }
+      if (me.role === "player") {
+        const player = players.find(player => player.id === me.id);
 
-      renderPlayerTabs();
-      await showSelectedPlayer();
-    }
+        if (!player) {
+          logout();
+          message("This player account was removed.");
+          return;
+        }
 
-    async function refreshDashboard() {
-      if (!me) return;
+        me = { ...player, role: "player" };
 
-      if (me.role === "coach") {
-        await refreshPlayers();
+        $("saved-body-weight").textContent = bodyWeightText(player);
+
+        // Leave unsaved body weight input untouched during refresh.
+        renderHistory(
+          $("player-history"),
+          entries.filter(entry => entry.player_id === me.id),
+          true
+        );
       } else {
-        await refreshPlayerHistory();
+        if (!players.some(player => player.id === selected)) {
+          selected = players[0]?.id || null;
+        }
+
+        renderPlayerTabs();
+        showSelectedPlayer();
       }
+
+      renderLeaderboard();
     }
 
     function renderPlayerTabs() {
-      const focused = document.activeElement;
-      const focusedPlayer = $("tabs").contains(focused)
-        ? focused.dataset.playerId
+      const focusedId = $("tabs").contains(document.activeElement)
+        ? document.activeElement.dataset.playerId
         : null;
 
       $("tabs").replaceChildren();
@@ -607,110 +701,121 @@
         button.type = "button";
         button.textContent = player.name;
         button.dataset.playerId = player.id;
+
         button.setAttribute(
           "aria-pressed",
           String(player.id === selected)
         );
 
-        button.addEventListener("click", async () => {
+        button.addEventListener("click", () => {
           selected = player.id;
 
           Array.from($("tabs").children).forEach(tab => {
             tab.setAttribute("aria-pressed", String(tab === button));
           });
 
-          $("coach-history").textContent = "Loading lifts...";
-
-          try {
-            await showSelectedPlayer();
-          } catch (error) {
-            message(error.message);
-          }
+          showSelectedPlayer();
         });
 
         $("tabs").appendChild(button);
       });
 
-      if (focusedPlayer) {
+      if (focusedId) {
         const replacement = Array.from($("tabs").children)
-          .find(button => button.dataset.playerId === focusedPlayer);
+          .find(button => button.dataset.playerId === focusedId);
 
         replacement?.focus();
       }
     }
 
-    async function showSelectedPlayer() {
-      if (me?.role !== "coach") return;
-
+    function showSelectedPlayer() {
       const player = players.find(player => player.id === selected);
-      const session = sessionVersion;
-      const request = ++historyVersion;
 
-      if (!player) {
-        $("player-title").textContent = "No players yet";
+      $("player-title").textContent = player
+        ? `${player.name}'s Lift History`
+        : "No players yet";
+
+      $("coach-body-weight").textContent = player
+        ? bodyWeightText(player)
+        : "";
+
+      if (player) {
+        renderHistory(
+          $("coach-history"),
+          entries.filter(entry => entry.player_id === player.id),
+          false
+        );
+      } else {
         $("coach-history").textContent =
           "Players will appear after creating an account.";
-        return;
       }
-
-      $("player-title").textContent = `${player.name}'s Lift History`;
-
-      const entries = await fetchLifts(player.id);
-
-      if (
-        session !== sessionVersion ||
-        request !== historyVersion ||
-        selected !== player.id ||
-        me?.role !== "coach"
-      ) return;
-
-      renderHistory($("coach-history"), entries, false);
     }
 
-    function renderHistory(container, entries, allowDelete) {
+    function makeTable(container, headings) {
       container.replaceChildren();
-
-      if (!entries.length) {
-        container.textContent = "No lifts logged yet.";
-        return;
-      }
 
       const wrapper = document.createElement("div");
       wrapper.className = "table-wrap";
 
       const table = document.createElement("table");
       const head = document.createElement("thead");
-      const heading = document.createElement("tr");
-
-      const headings = ["Date", "Lift", "Weight", "Sets", "Reps"];
-      if (allowDelete) headings.push("Action");
+      const row = document.createElement("tr");
 
       headings.forEach(text => {
         const cell = document.createElement("th");
         cell.scope = "col";
         cell.textContent = text;
-        heading.appendChild(cell);
+        row.appendChild(cell);
       });
 
-      head.appendChild(heading);
+      head.appendChild(row);
       table.appendChild(head);
 
-      const tbody = document.createElement("tbody");
+      const body = document.createElement("tbody");
 
-      entries.forEach(entry => {
-        const row = document.createElement("tr");
+      table.appendChild(body);
+      wrapper.appendChild(table);
+      container.appendChild(wrapper);
 
-        [
+      return body;
+    }
+
+    function addRow(body, values) {
+      const row = document.createElement("tr");
+
+      values.forEach(value => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+
+      body.appendChild(row);
+      return row;
+    }
+
+    function renderHistory(container, history, allowDelete) {
+      if (!history.length) {
+        container.textContent = "No lifts logged yet.";
+        return;
+      }
+
+      const body = makeTable(container, [
+        "Date",
+        "Lift",
+        "Weight",
+        "Sets",
+        "Reps",
+        ...(allowDelete ? ["Action"] : [])
+      ]);
+
+      history.forEach(entry => {
+        const row = addRow(body, [
           entry.date,
           entry.lift,
-          `${entry.weight} ${entry.unit}`,
+          `${formatNumber(entry.weight)} ${entry.unit}`,
           entry.sets,
           entry.reps
-        ].forEach(value => {
-          const cell = document.createElement("td");
-          cell.textContent = value;
-          row.appendChild(cell);
-        });
+        ]);
 
         if (allowDelete) {
           const cell = document.createElement("td");
@@ -718,69 +823,185 @@
 
           button.type = "button";
           button.textContent = "Delete";
+          button.disabled = mutating;
+
           button.setAttribute(
             "aria-label",
             `Delete ${entry.lift} on ${entry.date}`
           );
 
-          button.addEventListener("click", async () => {
+          button.addEventListener("click", () => {
             if (me?.role !== "player") return;
 
-            const session = sessionVersion;
             const playerId = me.id;
-            button.disabled = true;
 
-            try {
-              await query(
+            mutate(
+              () =>
                 db.from("lifts")
                   .delete()
                   .eq("id", entry.id)
                   .eq("player_id", playerId)
-              );
-
-              if (session !== sessionVersion) return;
-
-              message("Entry deleted.");
-
-              try {
-                await refreshPlayerHistory();
-              } catch {
-                message("Entry deleted. Could not refresh the history yet.");
-              }
-            } catch (error) {
-              if (session === sessionVersion) {
-                message(error.message);
-                button.disabled = false;
-              }
-            }
+                  .select("id")
+                  .single(),
+              "Entry deleted."
+            );
           });
 
           cell.appendChild(button);
           row.appendChild(cell);
         }
-
-        tbody.appendChild(row);
       });
-
-      table.appendChild(tbody);
-      wrapper.appendChild(table);
-      container.appendChild(wrapper);
     }
 
-    $("lift-form").addEventListener("submit", async event => {
+    function leaderboardRows(playerList, liftEntries) {
+      const names = new Map(
+        playerList.map(player => [player.id, player.name])
+      );
+
+      return LIFTS.map(lift => {
+        let best = -Infinity;
+        const winners = new Map();
+
+        liftEntries.forEach(entry => {
+          if (
+            entry.lift !== lift ||
+            !names.has(entry.player_id) ||
+            !["lb", "kg"].includes(entry.unit)
+          ) return;
+
+          const weight = Number(entry.weight);
+
+          if (!Number.isFinite(weight) || weight < 0) return;
+
+          const pounds = entry.unit === "kg"
+            ? weight / 0.45359237
+            : weight;
+
+          if (pounds > best + 0.000001) {
+            best = pounds;
+            winners.clear();
+            winners.set(entry.player_id, names.get(entry.player_id));
+          } else if (Math.abs(pounds - best) <= 0.000001) {
+            winners.set(entry.player_id, names.get(entry.player_id));
+          }
+        });
+
+        return {
+          lift,
+          best,
+          winners: Array.from(winners.values())
+            .sort((a, b) => a.localeCompare(b))
+        };
+      });
+    }
+
+    function renderLeaderboard() {
+      const body = makeTable($("leaderboard"), [
+        "Lift",
+        "Player(s)",
+        "Heaviest Weight"
+      ]);
+
+      leaderboardRows(players, entries).forEach(record => {
+        addRow(body, [
+          record.lift,
+          record.winners.join(", ") || "No lifts logged yet",
+          record.winners.length
+            ? `${formatNumber(record.best)} lb`
+            : "—"
+        ]);
+      });
+    }
+
+    function lockMutationControls(locked) {
+      $("logout").disabled = locked;
+      $("refresh").disabled = locked;
+
+      document.querySelectorAll(
+        "#lift-form button, #body-weight-form button, #player-history button"
+      ).forEach(button => button.disabled = locked);
+    }
+
+    async function mutate(makeRequest, successMessage, afterSave) {
+      if (mutating || me?.role !== "player") return;
+
+      const session = sessionVersion;
+
+      mutating = true;
+      refreshVersion++;
+      lockMutationControls(true);
+
+      try {
+        const result = await query(makeRequest());
+
+        if (session !== sessionVersion) return;
+
+        afterSave?.(result);
+        message(successMessage);
+
+        try {
+          await refreshData();
+        } catch {
+          message(
+            successMessage +
+            " Could not refresh the display yet. Click Refresh Data."
+          );
+        }
+      } catch (error) {
+        if (session === sessionVersion) {
+          message(error.message);
+        }
+      } finally {
+        mutating = false;
+        lockMutationControls(false);
+      }
+    }
+
+    $("body-weight-form").addEventListener("submit", event => {
       event.preventDefault();
 
       if (
-        saving ||
+        me?.role !== "player" ||
+        !$("body-weight-form").reportValidity()
+      ) return;
+
+      const value = Number($("body-weight").value);
+      const unit = $("body-weight-unit").value;
+      const playerId = me.id;
+
+      if (!Number.isFinite(value) || value <= 0 || value >= 10000) {
+        message("Enter a valid body weight.");
+        return;
+      }
+
+      mutate(
+        () =>
+          db.from("players")
+            .update({
+              body_weight: value,
+              body_weight_unit: unit
+            })
+            .eq("id", playerId)
+            .select(PLAYER_FIELDS)
+            .single(),
+        "Body weight saved to your account.",
+        player => {
+          me = { ...player, role: "player" };
+          $("saved-body-weight").textContent = bodyWeightText(player);
+        }
+      );
+    });
+
+    $("lift-form").addEventListener("submit", event => {
+      event.preventDefault();
+
+      if (
         me?.role !== "player" ||
         !$("lift-form").reportValidity()
       ) return;
 
-      const session = sessionVersion;
-      const playerId = me.id;
-
       const entry = {
-        player_id: playerId,
+        player_id: me.id,
         date: $("date").value,
         lift: $("lift").value,
         weight: Number($("weight").value),
@@ -789,87 +1010,77 @@
         reps: Number($("reps").value)
       };
 
-      saving = true;
-      $("logout").disabled = true;
-
-      const saveButton = $("lift-form").querySelector("button");
-      saveButton.disabled = true;
-
-      try {
-        await query(db.from("lifts").insert(entry));
-
-        if (session !== sessionVersion) return;
-
-        message("Lift saved to the online database.");
-
-        try {
-          await refreshPlayerHistory();
-        } catch {
-          message("Lift saved. Could not refresh the history yet.");
-        }
-      } catch (error) {
-        if (session === sessionVersion) message(error.message);
-      } finally {
-        saving = false;
-        saveButton.disabled = false;
-        $("logout").disabled = false;
-      }
+      mutate(
+        () => db.from("lifts").insert(entry),
+        "Lift saved to the online database."
+      );
     });
 
     $("refresh").addEventListener("click", async () => {
+      if (mutating) return;
+
       const session = sessionVersion;
       $("refresh").disabled = true;
 
       try {
-        await refreshDashboard();
+        await refreshData();
 
         if (session === sessionVersion) {
-          message("Players refreshed.");
+          message("Data refreshed.");
         }
       } catch (error) {
-        if (session === sessionVersion) message(error.message);
+        if (session === sessionVersion) {
+          message(error.message);
+        }
       } finally {
-        $("refresh").disabled = false;
+        $("refresh").disabled = mutating;
       }
     });
 
-    $("logout").addEventListener("click", () => {
-      if (saving) return;
+    function logout() {
+      if (mutating) return;
 
       sessionVersion++;
-      historyVersion++;
-      playerListVersion++;
+      refreshVersion++;
 
       me = null;
       players = [];
+      entries = [];
       selected = null;
 
       $("dashboard").hidden = true;
-      $("player-view").hidden = true;
-      $("coach-view").hidden = true;
       $("login").hidden = false;
 
-      $("player-history").replaceChildren();
-      $("coach-history").replaceChildren();
-      $("tabs").replaceChildren();
-      $("player-title").textContent = "";
+      [
+        "player-history",
+        "coach-history",
+        "leaderboard",
+        "tabs"
+      ].forEach(id => $(id).replaceChildren());
 
       $("account-form").reset();
+      $("body-weight-form").reset();
       updatePasswordField();
 
       message("Logged out.");
       $("name").focus();
-    });
+    }
 
-    // Load shared records every 10 seconds while the page is visible.
+    $("logout").addEventListener("click", logout);
+
     setInterval(async () => {
-      if (!me || document.hidden || autoRefreshing || saving) return;
+      if (
+        !me ||
+        document.hidden ||
+        mutating ||
+        autoRefreshing
+      ) return;
 
       const session = sessionVersion;
       autoRefreshing = true;
 
       try {
-        await refreshDashboard();
+        await refreshData();
       } catch (error) {
         if (session === sessionVersion) {
           message("Could not refresh: " + error.message);
@@ -880,9 +1091,7 @@
     }, 10000);
 
     if (!db) {
-      message(
-        "Could not load the database connection. Check your internet and refresh."
-      );
+      message("Could not load Supabase. Check your internet and refresh.");
     }
   </script>
 </body>
